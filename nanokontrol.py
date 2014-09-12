@@ -6,10 +6,43 @@ import pygame.midi
 pygame.init()
 pygame.midi.init()
 
+class Map(object):
+    KNOBS = range(0, 8)
+    SLIDERS = range(16, 16+8)
+
+    SS = range(32, 32+8)
+    MS = range(48, 48+8)
+    RS = range(64, 64+8)
+    
+    RWND = 43
+    FFWD = 44
+    STOP = 42
+    PLAY = 41
+    RECORD = 45
+
+    CYCLE = 46
+    SET = 60
+    SLEFT = 61
+    SRIGHT = 62
+
+    LEFT = 58
+    RIGHT = 59
+
+    DIGITAL = set(range(32, 72))
+    ANALOG = set(range(0, 32))
+
+
 class NanoKontrol2(object):
+    MAX_EVENTS = 100
     def __init__(self):
         self.input_dev_id = None
         self.output_dev_id = None
+
+        self.led_state = {d: False for d in Map.DIGITAL}
+        self.toggle_state = {d: False for d in Map.DIGITAL}
+        self.state = {d: False for d in Map.DIGITAL}
+        self.state.update({a: 0.0 for a in Map.ANALOG})
+
         self.setup_device()
 
     def find_device(self):
@@ -34,19 +67,47 @@ class NanoKontrol2(object):
         self.input_dev = pygame.midi.Input(self.input_dev_id)
         self.output_dev = pygame.midi.Output(self.output_dev_id)
 
+        self.clear_leds()
+
     def free_device(self):
         if self.input_dev_id:
             self.input_dev.close()
         if self.output_dev_id:
             self.output_dev.close()
 
-    def set_led(self, note, state):
-        self.output_dev.write_short(176, note, 127 if state else 0)
+    def clear_leds(self):
+        for ch in Map.DIGITAL:
+            self.set_led(ch, False, force=True)
 
-    def process_input(self, 
+    def set_led(self, note, state, force=False):
+        if force or self.led_state[note] != state:
+            self.output_dev.write_short(176, note, 127 if state else 0)
+        self.led_state[note] = state
 
-
-
+    def process_input(self):
+        raw_events = self.input_dev.read(self.MAX_EVENTS)
+        for event in raw_events:
+            (status, channel, data, _data2), timestamp = event
+            if channel in Map.DIGITAL:
+                self.state[channel] = bool(data)
+                if data:
+                    self.toggle_state[channel] = not self.toggle_state[channel]
+                    self.set_led(channel, self.toggle_state[channel])
+            elif channel in Map.ANALOG:
+                self.state[channel] = data / 127.0
+            else:
+                print "Unknown channel:", channel, event
+            
+def main():
+    import time
+    nk = NanoKontrol2()
+    nk.clear_leds()
+    while True:
+        nk.process_input()
+        for i in range(8):
+            nk.set_led(Map.SS[i], nk.state[Map.SLIDERS[i]] > 0.5)
+            nk.set_led(Map.MS[i], nk.state[Map.KNOBS[i]] > 0.5)
+        time.sleep(0.01)
 
 if __name__ == "__main__":
     main()
