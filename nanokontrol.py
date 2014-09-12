@@ -6,6 +6,8 @@ import pygame.midi
 pygame.init()
 pygame.midi.init()
 
+__all__ = ["Map", "NanoKontrol2"]
+
 class Map(object):
     KNOBS = range(0, 8)
     SLIDERS = range(16, 16+8)
