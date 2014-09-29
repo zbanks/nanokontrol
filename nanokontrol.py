@@ -2,6 +2,7 @@
 
 import pygame
 import pygame.midi
+import time
 
 pygame.init()
 pygame.midi.init()
@@ -9,8 +10,8 @@ pygame.midi.init()
 __all__ = ["Map", "NanoKontrol2"]
 
 class Map(object):
-    KNOBS = range(0, 8)
-    SLIDERS = range(16, 16+8)
+    SLIDERS = range(0, 8)
+    KNOBS = range(16, 16+8)
 
     SS = range(32, 32+8)
     MS = range(48, 48+8)
@@ -33,6 +34,8 @@ class Map(object):
     DIGITAL = set(range(32, 72))
     ANALOG = set(range(0, 32))
 
+    ALL = DIGITAL | ANALOG
+
 
 class NanoKontrol2(object):
     MAX_EVENTS = 100
@@ -41,9 +44,10 @@ class NanoKontrol2(object):
         self.output_dev_id = None
 
         self.led_state = {d: False for d in Map.DIGITAL}
-        self.toggle_state = {d: False for d in Map.DIGITAL}
         self.state = {d: False for d in Map.DIGITAL}
         self.state.update({a: 0.0 for a in Map.ANALOG})
+        self.toggle_state = self.state.copy()
+        self.events = {}
 
         self.setup_device()
 
@@ -60,7 +64,7 @@ class NanoKontrol2(object):
                 self.output_dev_id = dev
 
     def setup_device(self):
-        self.free_device()
+        #self.free_device()
         if self.input_dev_id is None or self.output_dev_id is None:
             self.find_device()
         if self.input_dev_id is None or self.output_dev_id is None:
@@ -87,18 +91,32 @@ class NanoKontrol2(object):
         self.led_state[note] = state
 
     def process_input(self):
-        raw_events = self.input_dev.read(self.MAX_EVENTS)
-        for event in raw_events:
-            (status, channel, data, _data2), timestamp = event
-            if channel in Map.DIGITAL:
-                self.state[channel] = bool(data)
-                if data:
-                    self.toggle_state[channel] = not self.toggle_state[channel]
-                    self.set_led(channel, self.toggle_state[channel])
-            elif channel in Map.ANALOG:
-                self.state[channel] = data / 127.0
-            else:
-                print "Unknown channel:", channel, event
+        self.events = {}
+        while True:
+            raw_events = self.input_dev.read(self.MAX_EVENTS)
+            if not raw_events:
+                break
+            for event in raw_events:
+                (status, channel, data, _data2), timestamp = event
+
+                if channel not in self.events:
+                    self.events[channel] = []
+                real_time = time.time() + (timestamp - pygame.midi.time()) / 1000.
+                self.events[channel].append((real_time, data))
+
+                if channel in Map.DIGITAL:
+                    self.state[channel] = bool(data)
+                    if data:
+                        self.toggle_state[channel] = not self.toggle_state[channel]
+                        self.set_led(channel, self.toggle_state[channel])
+                elif channel in Map.ANALOG:
+                    self.state[channel] = data / 127.0
+                    self.toggle_state[channel] = data / 127.0
+                else:
+                    print "Unknown channel:", channel, event
+
+    def update(self):
+        return self.process_input()
             
 def main():
     import time
